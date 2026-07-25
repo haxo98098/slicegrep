@@ -38,6 +38,10 @@ frames, durations = [], []
 screen = []
 
 
+def reset():
+    del frames[:], durations[:], screen[:]
+
+
 def draw():
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -102,7 +106,59 @@ def caption(text, pause=2.2):
     line((text, DIM), pause=pause)
 
 
+def save(name):
+    imgs = [f.convert("P", palette=Image.ADAPTIVE, colors=64) for f in frames]
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    imgs[0].save(out, save_all=True, append_images=imgs[1:],
+                 duration=durations, loop=0, optimize=True)
+    print(f"{name:18s} frames={len(imgs):4d}  "
+          f"runtime={sum(durations)/1000:5.1f}s  "
+          f"size={os.path.getsize(out)//1024:4d} KB")
+
+
+# ===================================================================== short
+# For the top of the README: the token collapse and the hook, nothing else.
+# Same measured numbers as the full demo, just fewer scenes.
+def build_short():
+    reset()
+    caption("# an agent needs to understand scoring and dedup", 1.5)
+    type_cmd("wc -c src/slicegrep/core.py", pause=0.6)
+    line(("  74406", YELLOW, True), ("  bytes", FG), ("   ->  ", DIM),
+         ("~18,602 tokens", RED, True), (" of context burned", FG), pause=2.6)
+
+    clear(0.3)
+    caption("# ask for just the slices that matter", 1.4)
+    type_cmd('slicegrep src/slicegrep/core.py "def score|dedupe" --budget 600',
+             pause=0.7)
+    blank()
+    line(("=== slicegrep: ", CYAN), ("~350 tokens", GREEN, True),
+         (" / 600 budget ===", CYAN), pause=1.0)
+    line(("[DEDUPED: 4 near-duplicate chunk(s) removed]", YELLOW), pause=0.8)
+    line(("NEGATIVE EVIDENCE: 'class Scorer' not found", DIM), pause=2.8)
+
+    clear(0.3)
+    caption("# or let the hook do it, with no agent cooperation", 1.5)
+    line(("agent:", DIM), ("  Read(src/slicegrep/core.py)", WHITE), pause=1.2)
+    line(("hook: ", CYAN, True), (" intercepted, map + slices returned", FG),
+         pause=1.4)
+    blank()
+    line(("  17,849 tokens", RED, True), ("  ->  ", DIM),
+         ("2,195 tokens", GREEN, True), pause=3.0)
+
+    clear(0.3)
+    blank()
+    line(("  slicegrep", WHITE, True), pause=0.6)
+    line(("  ranked slices, not whole files", FG), pause=0.8)
+    blank()
+    line(("  pip install git+https://github.com/haxo98098/slicegerp", CYAN),
+         pause=4.5)
+    save("demo-short.gif")
+
+
 # ===================================================================== intro
+build_short()
+reset()
+
 caption("# a coding agent needs to understand scoring and dedup", 1.6)
 caption("# option 1: read the whole file", 1.6)
 type_cmd("wc -c src/slicegrep/core.py")
@@ -194,10 +250,4 @@ blank()
 line(("  pip install git+https://github.com/haxo98098/slicegerp", CYAN),
      pause=6.0)
 
-imgs = [f.convert("P", palette=Image.ADAPTIVE, colors=64) for f in frames]
-out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo.gif")
-imgs[0].save(out, save_all=True, append_images=imgs[1:],
-             duration=durations, loop=0, optimize=True)
-print("frames:", len(imgs))
-print("runtime:", round(sum(durations) / 1000, 1), "s")
-print("size KB:", round(os.path.getsize(out) / 1024))
+save("demo.gif")

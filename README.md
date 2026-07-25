@@ -2,7 +2,10 @@
 
 grep that gives back ranked, token-budgeted code slices instead of whole files.
 
-![slicegrep demo](docs/demo.gif)
+![slicegrep demo](docs/demo-short.gif)
+
+[Longer demo](docs/demo.gif) covering directory ranking, plain-English
+queries, negative evidence, and the hook.
 
 ## The problem I kept hitting
 
