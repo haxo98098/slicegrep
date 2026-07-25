@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "slicegrep"
-version = "0.5.0"
+version = "0.5.1"
 description = "grep that returns ranked, token-budgeted code slices for LLMs and coding agents"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -53,3 +53,4 @@ packages = ["src/slicegrep"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+

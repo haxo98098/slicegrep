@@ -1,3 +1,37 @@
+## [0.5.1] - 2026-07-24
+
+### Fixed — hangs
+
+- **Catastrophic regex backtracking.** A nested-quantifier pattern such as
+  `(a+)+$` hung indefinitely: measured at 197 seconds of CPU against one
+  200-character line and still running when killed, because Python's `re`
+  has no timeout. Patterns are now screened before compilation. A query made
+  entirely of such patterns raises a `ValueError` naming the fix; an unsafe
+  fragment inside a larger query degrades to a literal so the safe half of
+  the query still returns results, matching the existing rule that one bad
+  fragment must not kill a query.
+- **Pathological line lengths.** Lines over 5,000 characters (minified
+  bundles, generated data) are skipped rather than matched, bounding
+  per-line regex cost.
+- **Dense model load could block on the network.** `from_pretrained` reaches
+  HuggingFace on a cold cache; a refused connection raised, but a stalled
+  one blocked forever and was indistinguishable from a frozen search. The
+  load now runs under `SLICEGREP_DENSE_TIMEOUT` (default 15s) and degrades
+  to lexical-only.
+- **Hook deadline.** The PreToolUse hook runs retrieval under
+  `SLICEGREP_HOOK_TIMEOUT` (default 5s) and falls through to the plain read
+  if exceeded, and never triggers a dense-model load. A hook that blocks is
+  worse than no hook.
+- **BOM-prefixed hook stdin.** Some shells prepend a UTF-8 BOM when piping,
+  which made `json.load` fail and the hook silently no-op on every call.
+
+### Added
+
+- `PreToolUse` hook (`slicegrep-hook`) and Claude Code plugin: intercepts
+  large whole-file reads and returns a file map plus ranked slices.
+  Measured 17,849 -> 2,195 tokens on this repo's own `core.py`.
+- 18 regression tests covering hook fail-open behaviour and hang cases.
+
 # Changelog
 
 All notable changes to this project are documented here. The format follows
@@ -16,7 +50,7 @@ All notable changes to this project are documented here. The format follows
   regression over query-shape features, trained on 519 burned benchmark
   outcomes (92.3% train accuracy; `benchmarks/train_router.py` retrains on
   any corpus). Dev: matches the hand rule (v2 68.7 = 68.7; v3 27.0 vs
-  28.0) — the hand rule remains default.
+  28.0) â€” the hand rule remains default.
 
 ## [0.5.0] - 2026-07-20
 
@@ -127,11 +161,11 @@ All notable changes to this project are documented here. The format follows
 
 - Benchmark v2 (`benchmarks/bench2.py`): six task families (symbol,
   docstring-concept comprehension, cross-file call-chain, bug localization,
-  config/data-flow, test+impl) × seven strategies (raw rg, whole-file,
+  config/data-flow, test+impl) Ã— seven strategies (raw rg, whole-file,
   rg+windows, rg+file-ranking, jedi/LSP symbol search, TF-IDF vector
   retriever, slicegrep). 240 seeded tasks; multi-span ground truth. slicegrep
   leads overall (60.8% hit rate at 1,995 median tokens, 1 call) but
-  rg+windows wins multi-span families and TF-IDF wins concept queries —
+  rg+windows wins multi-span families and TF-IDF wins concept queries â€”
   documented as the v0.2 roadmap. `bench` extra installs jedi.
 - Scaled benchmark mode (`--scale N`): generates up to N seeded, reproducible
   lookup tasks across four pinned corpora (click, flask, requests, rich) and
@@ -144,7 +178,7 @@ All notable changes to this project are documented here. The format follows
   actual definition out of the token budget. Definition lines are now detected
   directly (pattern match on a `def`/`class`/`fn`/... line, +25), and the best
   definition chunk is guaranteed a slot when packing the budget.
-  300-task success rate: 71.7% → 84.7%.
+  300-task success rate: 71.7% â†’ 84.7%.
 
 ### Measured (benchmark v2, 240 tasks)
 - Overall ground-truth hit rate 60.8% -> 63.9% (best baseline: 57.3%).
@@ -157,7 +191,7 @@ All notable changes to this project are documented here. The format follows
 ## [0.1.0] - 2026-07-19
 
 ### Added
-- `focused_read()` core engine: grep → slice → rank → dedupe → token-budget →
+- `focused_read()` core engine: grep â†’ slice â†’ rank â†’ dedupe â†’ token-budget â†’
   negative evidence, standard-library only.
 - Ranking signals: co-occurrence, all-patterns, rare terms, definition-vs-usage,
   with test/vendor/comment demotion.
@@ -169,3 +203,4 @@ All notable changes to this project are documented here. The format follows
 - CLI: `slicegrep` and `fr`, with `--budget`, `--boundary`, `--recursive`,
   `--no-dedupe`, and `--json`.
 - MCP server (`slicegrep-mcp`) exposing `focused_read` to any MCP client.
+

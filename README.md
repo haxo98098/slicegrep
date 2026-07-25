@@ -47,6 +47,31 @@ Tune with `SLICEGREP_HOOK_MIN_TOKENS` (default 2000), `SLICEGREP_HOOK_BUDGET`
 (1200), or `SLICEGREP_HOOK_DISABLE=1`. If `python` is not on your PATH as
 `python`, edit the command in `hooks/hooks.json`.
 
+### If a search seems to hang
+
+Two causes, both fixed in 0.5.1, both worth knowing about because they are
+generic to regex-based retrieval:
+
+- **Catastrophic backtracking.** A pattern with a nested quantifier such as
+  `(a+)+$` makes Python's `re` engine backtrack exponentially. Measured here:
+  197 seconds of CPU against a single 200-character line, still running when
+  killed, because `re` has no timeout and never returns. Patterns are now
+  screened; a query made only of such patterns raises immediately, and an
+  unsafe fragment inside a larger query degrades to a literal so the rest of
+  the query still works. Lines longer than 5,000 characters (minified
+  bundles) are skipped rather than matched.
+- **The optional dense model reaching the network.** `from_pretrained` can
+  fetch from HuggingFace on a cold cache. A refused connection raises, but a
+  stalled one just blocks, which looks identical to a frozen search. The load
+  is now bounded by `SLICEGREP_DENSE_TIMEOUT` (15s) and degrades to
+  lexical-only.
+
+For speed: `SLICEGREP_DENSE=off` removes about 2.7s from a cold directory
+search on a mid-size repo (the dense stage is an accuracy option, not a
+requirement). A cold CLI run over a ~770-file tree is roughly 7s; the
+in-process cache makes warm calls 35-60ms, so long-lived MCP servers pay
+this once rather than per query.
+
 - **Zero dependencies** for the core (standard library only). Python 3.8+ (the
   optional MCP server needs 3.10+).
 - **CLI + library + MCP server.** Use it from a shell, import it, or plug it into

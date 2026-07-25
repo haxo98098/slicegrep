@@ -40,10 +40,18 @@ import os
 import re
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 MIN_TOKENS = int(os.environ.get("SLICEGREP_HOOK_MIN_TOKENS", "2000"))
 BUDGET = int(os.environ.get("SLICEGREP_HOOK_BUDGET", "1200"))
+# Hard wall-clock ceiling. The hook blocks the Read it is intercepting, so a
+# slow hook is indistinguishable from a frozen agent. Past this, give up and
+# let the plain read happen.
+TIMEOUT = float(os.environ.get("SLICEGREP_HOOK_TIMEOUT", "5.0"))
+# Past this the file is too big to be worth slicing in-band: reading it to
+# slice it costs what we are trying to save.
+MAX_BYTES = int(os.environ.get("SLICEGREP_HOOK_MAX_BYTES", str(5_000_000)))
 
 # Slicing only makes sense for source. Prose and data files are read whole.
 _CODE_SUFFIXES = {
@@ -192,6 +200,39 @@ def _file_map(text: str, max_lines: int = 60) -> str:
     return "\n".join(out)
 
 
+def _slices(path: Path, terms: list) -> str:
+    """Run retrieval under a hard deadline; empty string on miss or timeout.
+
+    The worker is a daemon thread because Python cannot kill a thread stuck
+    in a C-level regex. The process exits immediately after we return, so an
+    abandoned worker dies with it — what matters is that the READ is never
+    held hostage to retrieval finishing.
+    """
+    if not terms:
+        return ""
+    # Never let the hook trigger a dense-model load: it can hit the network
+    # on a cold cache and costs seconds even warm. The hook is latency
+    # critical; the CLI and MCP paths can still use dense.
+    os.environ.setdefault("SLICEGREP_DENSE", "off")
+    out: dict = {}
+
+    def work():
+        try:
+            from .core import focused_read
+            pattern = "|".join(re.escape(t) for t in terms)
+            result = focused_read(str(path), pattern, budget=BUDGET,
+                                  boundary="fn", objective="auto")
+            if result.chunks:
+                out["text"] = result.render()
+        except Exception:
+            pass
+
+    th = threading.Thread(target=work, daemon=True)
+    th.start()
+    th.join(TIMEOUT)
+    return out.get("text", "")
+
+
 def _passthrough() -> int:
     """Exit 0 with no output: normal permission flow, full read proceeds."""
     return 0
@@ -236,6 +277,8 @@ def main(argv=None) -> int:
 
     if raw_size // 4 < MIN_TOKENS:          # rule 3: not worth intercepting
         return _passthrough()
+    if raw_size > MAX_BYTES:                # too big to slice in-band
+        return _passthrough()
 
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
@@ -253,17 +296,7 @@ def main(argv=None) -> int:
     terms = _query_terms(_tail_text(payload.get("transcript_path", "")), path)
     file_map = _file_map(text)
 
-    slices = ""
-    if terms:
-        try:
-            from .core import focused_read
-            pattern = "|".join(re.escape(t) for t in terms)
-            result = focused_read(str(p), pattern, budget=BUDGET,
-                                  boundary="fn", objective="auto")
-            if result.chunks:
-                slices = result.render()
-        except Exception:
-            slices = ""
+    slices = _slices(p, terms)
 
     if not slices and not file_map:
         return _passthrough()               # rule 1: nothing useful, fail open

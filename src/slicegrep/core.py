@@ -146,9 +146,50 @@ def _split_pattern_top_level(pattern: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+# A quantified group whose body is itself quantified — (a+)+, (x*)*, (\d+)*
+# and friends. Python's re engine backtracks exponentially on these: a 200
+# character non-matching line against (a+)+$ pegs a core indefinitely, and
+# re has no timeout, so the call never returns. Patterns here are written by
+# an LLM as often as by a human, so this must be caught rather than trusted.
+_REDOS_RE = re.compile(r"""
+    \(                      # group open
+      (?![?]P?[=!<])        # skip lookarounds / named-group prefixes
+      [^()]*                # body without nesting
+      (?:[+*]|\{\d+,\s*\}?) # ... containing an unbounded quantifier
+      [^()]*
+    \)
+    \s*
+    (?:[+*]|\{\d+,\s*\}?)   # ... and quantified again on the outside
+""", re.VERBOSE)
+
+# Minified bundles and generated data files carry single lines megabytes long.
+# Regex cost is superlinear in line length for many patterns, so lines past
+# this are skipped rather than matched.
+_MAX_LINE_CHARS = 5000
+
+
+def _reject_redos(parts: List[str]) -> None:
+    """Raise only when EVERY fragment is unsafe.
+
+    Individual unsafe fragments are defused to literals by the compilers
+    below, matching the existing rule that one bad fragment must not kill
+    the whole query: 'compute_total|(a+)+$' should still find the function.
+    A query made of nothing but bombs would silently match nothing, so that
+    one is worth an explicit error instead."""
+    if parts and all(_REDOS_RE.search(p) for p in parts):
+        raise ValueError(
+            "pattern rejected: nested quantifier (e.g. '(a+)+') can cause "
+            "catastrophic backtracking and hang the search. Rewrite without "
+            "the inner quantifier, for example 'a+' instead of '(a+)+'."
+        )
+
+
 def _compile_or_escape(pattern: str, flags: int = re.IGNORECASE) -> re.Pattern:
     """Compile a fragment; an invalid regex degrades to a literal search rather
-    than killing the whole query."""
+    than killing the whole query. Unsafe fragments degrade to literals too:
+    a slow correct answer is fine, an infinite one is not."""
+    if _REDOS_RE.search(pattern):
+        return re.compile(re.escape(pattern), flags)
     try:
         return re.compile(pattern, flags)
     except re.error:
@@ -160,6 +201,7 @@ def _compile_multi_pattern(patterns: List[str], flags: int = re.IGNORECASE) -> r
     against all of them in one pass. One bad fragment must not kill the query."""
     if not patterns:
         return re.compile(r"(?!)", flags)  # matches nothing
+    patterns = [re.escape(p) if _REDOS_RE.search(p) else p for p in patterns]
     parts = [f"(?:{p})" for p in patterns]
     try:
         return re.compile("|".join(parts), flags)
@@ -425,7 +467,8 @@ class _Scorer:
         # One combined-regex prefilter per line; per-pattern work only on
         # matching lines (profiling: the naive per-pattern loop was ~50% of
         # warm-call latency on multi-pattern NL queries).
-        match_lines = [l for l in lines if self.combined.search(l)]
+        match_lines = [l for l in lines
+                       if len(l) <= _MAX_LINE_CHARS and self.combined.search(l)]
 
         matched = set()
         for line in match_lines:
@@ -747,17 +790,41 @@ def _dense_weight() -> float:
 
 
 def _dense_model():
+    """Load the optional dense model, bounded by a deadline.
+
+    from_pretrained may reach the network on a cold cache. A try/except
+    catches a refused connection but not a stalled one, and a stalled load
+    looks exactly like a frozen search to whatever is waiting on it. The
+    load therefore runs on a daemon thread with a timeout: dense retrieval
+    is an optional accuracy boost and is never worth blocking a query for.
+    """
     if _DENSE_STATE["tried"]:
         return _DENSE_STATE["model"]
     _DENSE_STATE["tried"] = True
     if not _dense_enabled():
         return None
+
+    import os
+    import threading
     try:
-        from model2vec import StaticModel
-        _DENSE_STATE["model"] = StaticModel.from_pretrained(
-            "minishlab/potion-code-16M-v2")
-    except Exception:
-        _DENSE_STATE["model"] = None
+        deadline = float(os.environ.get("SLICEGREP_DENSE_TIMEOUT", "15"))
+    except ValueError:
+        deadline = 15.0
+
+    box: Dict[str, object] = {}
+
+    def _load():
+        try:
+            from model2vec import StaticModel
+            box["m"] = StaticModel.from_pretrained(
+                "minishlab/potion-code-16M-v2")
+        except Exception:
+            box["m"] = None
+
+    th = threading.Thread(target=_load, daemon=True)
+    th.start()
+    th.join(deadline)
+    _DENSE_STATE["model"] = box.get("m")
     return _DENSE_STATE["model"]
 
 
@@ -1487,7 +1554,7 @@ def _extract_file(
 
     matches_by_line: Dict[int, List[str]] = {}
     for i, line in enumerate(lines):
-        if not combined.search(line):
+        if len(line) > _MAX_LINE_CHARS or not combined.search(line):
             continue
         for pat in compiled:
             if pat.search(line):
@@ -1614,6 +1681,7 @@ def focused_read(
     patterns = _split_pattern_top_level(pattern)
     if not patterns:
         raise ValueError("pattern is empty after parsing")
+    _reject_redos(patterns)         # fail fast rather than hang; see above
     patterns = _expand_nl_query(pattern, patterns)
 
     target = Path(path)
