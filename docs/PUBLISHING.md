@@ -3,10 +3,9 @@
 Steps that need the project owner's accounts. Everything else (building,
 validating, tagging, GitHub release) is automated.
 
-## Install path: GitHub, deliberately
+## Install path: GitHub
 
-There is no PyPI package and none is planned. The project installs fine
-without one:
+Everything ships from this repo. Installing:
 
     pip install git+https://github.com/haxo98098/slicegrep
 
@@ -51,7 +50,7 @@ withheld, and the MCP server plus plugin for the agent ecosystem.
 
 ## Note on the official MCP registry
 
-https://registry.modelcontextprotocol.io requires a package on a supported
-registry (PyPI or npm). Since this project ships via GitHub only, that
-registry is out of scope. The community directories in step 1 work with a
-GitHub URL alone.
+https://registry.modelcontextprotocol.io requires the server to be published
+to a language package registry, which this project deliberately does not use.
+It is out of scope. The community directories in step 1 index a GitHub URL on
+its own, which is why they are the ones listed here.
