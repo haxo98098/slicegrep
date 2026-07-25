@@ -1,131 +1,116 @@
 # slicegrep
 
-**grep that returns ranked, token-budgeted code slices — built for LLMs and coding agents.**
+grep that gives back ranked, token-budgeted code slices instead of whole files.
 
-Plain `grep` gives you matching lines with no context. "Read the whole file" gives
-you context but burns thousands of tokens on code the model doesn't need. `slicegrep`
-sits in between: it greps a file or directory, extracts only the **relevant slices**,
-**ranks** them, **dedupes** near-duplicates, caps the total to a **token budget**, and
-tells you what it did **not** find.
+## The problem I kept hitting
 
-That's the grep-then-read loop an LLM agent runs dozens of times per task — collapsed
-into one call that returns a fraction of the tokens.
+Watch a coding agent work and you see the same loop over and over. It greps,
+gets a list of line numbers with no context, then reads three whole files to
+understand them, then does it again for the next question. Most of what lands
+in the context window is code nobody asked about, and once it is in there it
+stays, pushing out the things that actually mattered.
+
+Plain grep gives you matches with no context. Reading the file gives you
+context and a few thousand tokens of noise with it. I wanted the middle: the
+handful of slices that answer the question, ordered by relevance, capped at a
+size I choose.
+
+That is what this does. It greps a file or a directory, pulls out the relevant
+slices, ranks them, collapses near-duplicates, trims the result to a token
+budget, and tells you what it could not find.
 
 ```bash
 pip install git+https://github.com/haxo98098/slicegerp
 ```
 
-## Make it automatic (Claude Code plugin)
+Standard library only for the core. Python 3.8 and up.
 
-Offering an agent a better retrieval tool is not enough. It has to *choose*
-the tool, and agents reach for the plain file read out of habit. The plugin
-removes the choice: a `PreToolUse` hook sits in front of `Read`, and when a
-read is large enough to be worth it, the whole file is replaced with a file
-map plus the slices matching what the session is actually working on.
+## Make it automatic
+
+Giving an agent a better tool is not enough. It has to remember to pick it,
+and agents reach for the plain file read out of habit. So there is a plugin
+that takes the choice away. A hook sits in front of the Read tool, and when a
+read is big enough to be worth it, the whole file gets swapped for a map of
+the file plus the slices that match whatever the session is working on.
 
 ```
 /plugin marketplace add haxo98098/slicegerp
 /plugin install slicegrep@slicegrep
 ```
 
-No pip install needed; the plugin runs the bundled source directly. Measured
-on this repo's own `core.py`: **17,849 tokens of whole file became 2,195
-tokens of map plus slices, an 88% cut on a single read.**
+Nothing to pip install, the plugin runs the bundled source. On this repo's own
+`core.py` that turns a 17,849 token read into 2,195 tokens of map plus slices.
 
-Three rules keep it safe to leave on:
+I run this on my own machine, so it is built to be safe to leave switched on:
 
-1. **Fail open.** Any error, unreadable path, or empty result lets the normal
-   read happen. A retrieval optimizer must never be able to break a session.
-2. **Never trap the model.** The second read of the same path in a session
-   passes through untouched, and the injected text says so. If the slices
-   were not enough, asking again returns the whole file.
-3. **Only when it pays.** Small files, ranged reads (`offset`/`limit`), and
-   non-code files pass through. The median real-world read is ~600 tokens,
-   where slicing saves nothing. The cost lives in the tail.
+1. **It fails open.** Any error, any unreadable path, any empty result, and
+   the normal read just happens. A retrieval tool should never be able to
+   break your session.
+2. **It never traps the model.** Read the same file twice and the second one
+   passes straight through, and the injected text says so. If the slices were
+   not enough, asking again gets you the whole thing.
+3. **It only fires when it pays.** Small files, ranged reads, and non-code
+   files pass through untouched. I measured the median real-world read at
+   about 600 tokens, where slicing saves nothing worth having. The money is
+   in the tail.
 
-Tune with `SLICEGREP_HOOK_MIN_TOKENS` (default 2000), `SLICEGREP_HOOK_BUDGET`
-(1200), or `SLICEGREP_HOOK_DISABLE=1`. If `python` is not on your PATH as
-`python`, edit the command in `hooks/hooks.json`.
+Tune it with `SLICEGREP_HOOK_MIN_TOKENS` (default 2000),
+`SLICEGREP_HOOK_BUDGET` (1200), `SLICEGREP_HOOK_TIMEOUT` (5s), or turn it off
+with `SLICEGREP_HOOK_DISABLE=1`. If your Python is not on PATH as `python`,
+edit the command in `hooks/hooks.json`.
 
-### If a search seems to hang
-
-Two causes, both fixed in 0.5.1, both worth knowing about because they are
-generic to regex-based retrieval:
-
-- **Catastrophic backtracking.** A pattern with a nested quantifier such as
-  `(a+)+$` makes Python's `re` engine backtrack exponentially. Measured here:
-  197 seconds of CPU against a single 200-character line, still running when
-  killed, because `re` has no timeout and never returns. Patterns are now
-  screened; a query made only of such patterns raises immediately, and an
-  unsafe fragment inside a larger query degrades to a literal so the rest of
-  the query still works. Lines longer than 5,000 characters (minified
-  bundles) are skipped rather than matched.
-- **The optional dense model reaching the network.** `from_pretrained` can
-  fetch from HuggingFace on a cold cache. A refused connection raises, but a
-  stalled one just blocks, which looks identical to a frozen search. The load
-  is now bounded by `SLICEGREP_DENSE_TIMEOUT` (15s) and degrades to
-  lexical-only.
-
-For speed: `SLICEGREP_DENSE=off` removes about 2.7s from a cold directory
-search on a mid-size repo (the dense stage is an accuracy option, not a
-requirement). A cold CLI run over a ~770-file tree is roughly 7s; the
-in-process cache makes warm calls 35-60ms, so long-lived MCP servers pay
-this once rather than per query.
-
-- **Zero dependencies** for the core (standard library only). Python 3.8+ (the
-  optional MCP server needs 3.10+).
-- **CLI + library + MCP server.** Use it from a shell, import it, or plug it into
-  Claude Desktop / Claude Code / Cursor / Windsurf over the Model Context Protocol.
-- **Regex or natural language.** `"def score|budget"` works; so does
-  `"how does budget packing guarantee definitions"` — phrases with 3+ content
-  words expand automatically (subword + stemmed matching closes the
-  vocabulary gap on vague queries).
-
----
-
-## Why
-
-An LLM reading code doesn't want the file — it wants the *five slices that matter*,
-ordered by relevance, small enough to fit its context. `slicegrep` is that primitive:
-
-| | plain `grep` | read whole files | **slicegrep** |
-|---|---|---|---|
-| Context around matches | ✗ (lines only) | ✓ (all of it) | ✓ (just enough) |
-| Ranked by relevance | ✗ | ✗ | ✓ |
-| Near-duplicates collapsed | ✗ | ✗ | ✓ |
-| Fits a token budget | ✗ | ✗ | ✓ |
-| Tells you what's absent | ✗ | ✗ | ✓ (negative evidence) |
-
-### The point, in tokens
-
-Reading one 660-line source file to answer "how does scoring and dedup work?":
-
-```
-whole file  : ~6600 tokens
-slicegrep   :  ~375 tokens   →  94% fewer tokens, only the slices that matter
-```
+## Using it directly
 
 ```bash
-slicegrep src/core.py "class Scorer|def score|dedupe|rare" --budget 600
+# find a function
+slicegrep src/app.py "def handle_request"
+
+# whole enclosing blocks, searched recursively, under a token budget
+slicegrep src/ "Scorer|def score" --boundary fn --budget 800
+
+# co-occurring concepts, a chunk matching more of them ranks higher
+slicegrep . "retry|timeout|backoff" --budget 1500
+
+# raw JSON for tooling
+slicegrep src/ "TODO" 2 2 --json
 ```
 
-Multiply that by every file an agent reads per task.
+`fr` is installed as a shorter alias, for focused read.
 
-## Benchmarks
+Natural language works too. `"def score|budget"` is fine, and so is
+`"how does budget packing guarantee definitions"`. Anything with three or
+more content words gets expanded automatically with stemming and subword
+matching, which is what closes the vocabulary gap on vague questions.
 
-Evaluated under a three-tier protocol: tuning and validation seeds are burned
-during development; published numbers come from CONFIRMATION runs on virgin
-data (every previously-touched session excluded) against the frozen engine,
-run once. Two router defects were caught by confirmation runs and fixed; the
-seeds they consumed are documented in the CHANGELOG.
+As a library:
 
-### Real-change retrieval (v3, primary) — confirmation, n=286 virgin sessions
+```python
+from slicegrep import focused_read
 
-Real commits mined from click/flask/requests/rich history; repo reconstructed
-at the parent commit (git worktree, ancestor-only history — no future
-leakage); query from the commit message only; ground truth = the regions the
-real fix touched. Session hit = ≥50% of those regions retrieved under an
-8k-token cap.
+result = focused_read("src/", "class Scorer|def score", budget=800, boundary="fn")
+
+print(result.render())          # the ranked text report an LLM reads
+print(result.total_tokens)      # e.g. 612
+for chunk in result.chunks:
+    print(chunk.file, chunk.line_start, chunk.score, chunk.rank_reason)
+
+data = result.to_dict()         # structured output for your own pipeline
+```
+
+## Does it actually work
+
+I got tired of retrieval projects that report numbers from the same data they
+were tuned on, so this one holds data out. Tuning and validation seeds get
+burned during development, and published numbers come from confirmation runs
+on virgin data with every previously touched session excluded, against a
+frozen engine, run once. Two router bugs were caught this way, and the seeds
+they consumed are written down in the CHANGELOG rather than quietly reused.
+
+**Real-change retrieval, 286 virgin sessions.** Real commits mined from
+click, flask, requests and rich. The repo is reconstructed at the parent
+commit so no future information leaks in, the query is the commit message
+alone, and a hit means retrieving at least half the regions the real fix
+touched under an 8k cap.
 
 | strategy | hit rate | 95% CI | mean coverage |
 |---|---|---|---|
@@ -136,98 +121,76 @@ real fix touched. Session hit = ≥50% of those regions retrieved under an
 | ast-chunk tf-idf | 22.0% | [17.2, 26.8] | 20.5% |
 | bm25 windows | 21.7% | [16.9, 26.5] | 20.2% |
 
-Statistical tie for first with the dense-only retriever; both clear of the
-rest. slicegrep is the only method in the top cluster that also returns
-line-attributed slices, negative evidence, and objective-guaranteed context
-(definition + caller + test), and the only one that wins the suite below.
+That is a statistical tie for first, not a win, and I would rather say so.
+Both are clear of the rest. slicegrep is the only one in the top group that
+also returns line-attributed slices, negative evidence, and guaranteed
+coverage of definition plus caller plus test, and it is the one that wins the
+suite below.
 
-### Controlled retrieval suite (v2) — confirmation, fresh seed, 240 tasks
+**Controlled retrieval suite, fresh seed, 240 tasks.** Six task families
+(symbol lookup, docstring concepts, cross-file call chains, bug localization
+from error strings, config data flow, test plus implementation) against
+twelve strategies.
 
-Six task families (symbol, docstring-concept, cross-file call-chain, bug
-localization from error strings, config/data-flow, test+implementation),
-twelve strategies, 8k cap.
-
-| strategy | tokens → model | hit rate | tool calls |
+| strategy | tokens to model | hit rate | tool calls |
 |---|---|---|---|
 | **slicegrep 0.5** | 2,304 | **71.4%** | 1 |
 | bm25 windows | 2,213 | 66.1% | 1 |
 | ast-chunk tf-idf | 2,296 | 58.6% | 1 |
 | grep + window reads | 5,693 | 60.4% | 7 |
-| dense embeddings | 2,262 | 35.2% | 1 |
 | semble (embeddings+BM25) | 2,094 | 44.5% | 1 |
+| dense embeddings | 2,262 | 35.2% | 1 |
 
-First by 5.3 points at ~2.3k tokens and one call. Warm latency ~35-60ms
-(in-process corpus cache).
+First by 5.3 points, at about 2.3k tokens and a single call.
 
-### How: a query-shape router
+Other suites, run against earlier engines, are in the RESULTS files:
+cross-language (zod 77.5% against a next-best 60.0, serde 67.5% against 50.0,
+django at ~2,800 files holding first at 60.0), multi-turn, and an end-to-end
+run with real model calls where it had the best mean file recall.
 
-Precise queries (identifiers, error strings, 1-2 terms) run the lexical
-pipeline — BM25-scored definition-aligned blocks, objective guarantees,
-diversity packing; dense is fully gated out (it measurably dilutes precise
-packing). Vague queries (3+ plain words) keep the guarantees, then fill the
-budget by fused dense+BM25 ranking. Optional extras: `model2vec` for the
-dense stage; git history priors (temporally safe, ablation-switchable) —
-both off gracefully when unavailable, keeping the stdlib-only core.
+## How the ranking works
 
-### Other suites (earlier engines; see RESULTS files)
+Precise queries (identifiers, error strings, one or two terms) run the lexical
+pipeline: BM25 over definition-aligned blocks, guaranteed objectives, and
+diversity packing so one file cannot hog the budget. Dense retrieval is gated
+out of that path entirely, because measuring it showed it dilutes precise
+packing. Vague queries keep the guarantees and then fill the remaining budget
+with a fused dense and BM25 ranking.
 
-- **Cross-language (v5):** zod (TS) 77.5% vs next-best 60.0; serde (Rust)
-  67.5% vs 50.0; django at ~2,800 files: 60.0% holding first.
-- **Multi-turn (v4):** with one mechanical refinement round for every
-  strategy, slicegrep led on coverage (27.3%) and tied the best hit rate.
-- **End-to-end (v6, real Claude calls):** best mean file recall (66.7%)
-  among the three strategies tested; answer-correct within noise of the
-  leader at n=15.
-- **Historical (v1):** definition lookups, 84.7% vs 76.0 (grep+windows);
-  this suite caught the v0.1 ranking bug (71.7% before the fix).
+Things that raise a slice's score: it matches several of your patterns, it
+holds distinctive identifiers rather than boilerplate, it is where a symbol is
+defined rather than merely used, it has several hits in one place. Things that
+lower it: declaration-only matches, test files (unless you searched for
+tests), vendored or generated paths, and slices that are mostly comments.
 
----
+The optional extras (model2vec for dense, git history priors) degrade quietly
+when they are not available, which is what keeps the core dependency free.
 
-## Quick start
+### An empty result is a real answer
 
-```bash
-# find a function
-slicegrep src/app.py "def handle_request"
+Most search tools return nothing and leave you guessing whether the thing does
+not exist or you just missed it. This one says which:
 
-# whole enclosing blocks, searched recursively, under a token budget
-slicegrep src/ "Scorer|def score" --boundary fn --budget 800
-
-# co-occurring concepts — a chunk matching more of them ranks higher
-slicegrep . "retry|timeout|backoff" --budget 1500
-
-# raw JSON for tooling
-slicegrep src/ "TODO" 2 2 --json
+```
+NEGATIVE EVIDENCE:
+  - No definition found for 'Scorer' in src/
+  - Pattern 'deprecated_api' not found in src/
 ```
 
-`fr` is installed as a shorter alias for `slicegrep` (focused read).
-
-### As a library
-
-```python
-from slicegrep import focused_read
-
-result = focused_read("src/", "class Scorer|def score", budget=800, boundary="fn")
-
-print(result.render())          # ranked text report (what an LLM reads)
-print(result.total_tokens)      # e.g. 612
-for chunk in result.chunks:
-    print(chunk.file, chunk.line_start, chunk.score, chunk.rank_reason)
-
-data = result.to_dict()         # structured output for your own pipeline
-```
-
----
+It also distinguishes "not in the file" from "in the file but it fell outside
+the budget", which matters when you are deciding whether to raise the budget
+or change the query.
 
 ## MCP server
 
-Expose `focused_read` to any MCP client so the model can pull ranked code context
-on its own:
+If you would rather the model call it as a tool:
 
 ```bash
 pip install "slicegrep[mcp] @ git+https://github.com/haxo98098/slicegerp"
+claude mcp add slicegrep -- slicegrep-mcp
 ```
 
-**Claude Desktop / Claude Code** — add to your MCP config:
+Or in an MCP config file:
 
 ```json
 {
@@ -239,43 +202,33 @@ pip install "slicegrep[mcp] @ git+https://github.com/haxo98098/slicegerp"
 }
 ```
 
-Or, with Claude Code's CLI:
+Works with Claude Desktop, Claude Code, Cursor, Windsurf, or anything else
+that speaks MCP. Needs Python 3.10 or newer.
 
-```bash
-claude mcp add slicegrep -- slicegrep-mcp
-```
+## If a search seems to hang
 
-The model then calls a `focused_read` tool with `path`, `pattern`, and an optional
-`budget` / `boundary`, and gets back the same ranked, budget-capped report — instead
-of reading whole files into its context window.
+Both of these were real, both are fixed in 0.5.1, and both are worth knowing
+about because they will bite any regex-based retrieval tool.
 
----
+**Catastrophic backtracking.** A pattern with a nested quantifier like
+`(a+)+$` makes Python's regex engine backtrack exponentially. I measured 197
+seconds of CPU against one 200-character line, and it was still going when I
+killed it, because `re` has no timeout and simply never returns. Patterns are
+screened now. A query made only of those raises straight away and tells you
+how to rewrite it, and a bad fragment inside a bigger query degrades to a
+literal so the rest still works. Lines over 5,000 characters, which in
+practice means minified bundles, get skipped instead of matched.
 
-## How the ranking works
+**The dense model reaching the network.** Loading it can fetch from
+HuggingFace on a cold cache. A refused connection raises an error, but a
+stalled one just sits there, and from the outside that is indistinguishable
+from a frozen search. It is bounded now by `SLICEGREP_DENSE_TIMEOUT` (15s) and
+falls back to lexical only.
 
-Every candidate slice is scored, then the list is sorted, deduped, and trimmed to the
-budget. Signals that **raise** a chunk's score:
-
-- **co_occurrence / all_patterns** — the slice matches several of your `|` patterns.
-- **rare_terms** — it contains distinctive identifiers, not just boilerplate.
-- **definition** — the match is where a symbol is *defined*, not just used.
-- **multi_match** — several hits in the same slice.
-
-Signals that **lower** it: `declaration_only`, `test_demoted` (unless you searched for
-tests), `vendor_demoted` (generated/vendored paths), `mostly_comments`.
-
-### Negative evidence
-
-An empty result is a real answer. `slicegrep` reports it explicitly, and distinguishes
-"the pattern isn't in the file" from "it's there but fell outside the budgeted chunks":
-
-```
-NEGATIVE EVIDENCE:
-  - No definition found for 'Scorer' in src/
-  - Pattern 'deprecated_api' not found in src/
-```
-
----
+For speed, `SLICEGREP_DENSE=off` takes roughly 2.7s off a cold directory
+search on a mid-size repo. A cold run over a 770-file tree is about 7s, while
+warm calls are 35 to 60ms thanks to the in-process cache, so a long-running
+MCP server pays that cost once instead of every query.
 
 ## CLI reference
 
@@ -295,10 +248,8 @@ options:
   --version
 ```
 
-Exit code is `0` when at least one chunk matched, `1` when nothing did — so shell
-scripts and CI can branch on it.
-
----
+Exit code is 0 when something matched and 1 when nothing did, so scripts and
+CI can branch on it.
 
 ## Development
 
@@ -308,6 +259,11 @@ cd slicegrep
 pip install -e ".[dev,mcp]"
 pytest
 ```
+
+Failed experiments are recorded in the CHANGELOG alongside the ones that
+worked. Multiplicative history priors, adaptive budget splits, RRF packing and
+a few others all lost to what is here, and knowing what did not work seemed
+worth keeping.
 
 ## License
 
