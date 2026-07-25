@@ -17,10 +17,18 @@ in the context window.
 slicegrep path:
     one call, budgeted.
 
+The corpora are real upstream repositories at pinned revisions. Get them with:
+
+    python benchmarks/setup_corpora.py
+
 Usage:
     python benchmarks/compare_one.py                 # default task
     python benchmarks/compare_one.py --list
     python benchmarks/compare_one.py --task echo
+    python benchmarks/compare_one.py --corpora /path/to/corpora
+
+The corpora directory is resolved in this order: --corpora, then
+$SLICEGREP_BENCH_CORPORA, then benchmarks/corpora next to this script.
 """
 from __future__ import annotations
 
@@ -34,11 +42,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from slicegrep.core import focused_read  # noqa: E402
 
-CORPORA = Path(
-    r"C:\Users\Shadow\AppData\Local\Temp\claude"
-    r"\C--Users-Shadow-Desktop-framework"
-    r"\691df2a8-01d6-4046-a2cc-245c2837e1c6\scratchpad\corpora"
-)
+import os  # noqa: E402
+
+DEFAULT_CORPORA = Path(__file__).resolve().parent / "corpora"
+
+
+def resolve_corpora(cli_value: str | None) -> Path:
+    """--corpora, else $SLICEGREP_BENCH_CORPORA, else benchmarks/corpora."""
+    if cli_value:
+        return Path(cli_value).expanduser()
+    env = os.environ.get("SLICEGREP_BENCH_CORPORA")
+    if env:
+        return Path(env).expanduser()
+    return DEFAULT_CORPORA
 
 
 # Each task states a real bug-shaped question and what a correct answer must
@@ -189,16 +205,26 @@ def main() -> int:
     ap.add_argument("--task", default="echo", choices=sorted(TASKS))
     ap.add_argument("--budget", type=int, default=2000)
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--corpora", default=None,
+                    help="directory holding the cloned corpora "
+                         "(default: $SLICEGREP_BENCH_CORPORA, else "
+                         "benchmarks/corpora)")
     args = ap.parse_args()
     if args.list:
         for k, t in TASKS.items():
             print(f"{k:18s} [{t['repo']}] {t['question']}")
         return 0
 
+    corpora = resolve_corpora(args.corpora)
     task = TASKS[args.task]
-    root = CORPORA / task["repo"]
+    root = corpora / task["repo"]
     if not root.is_dir():
-        print(f"corpus missing: {root}", file=sys.stderr)
+        print(f"corpus not found: {root}\n\n"
+              f"Fetch the pinned revisions the published numbers came from:\n"
+              f"    python benchmarks/setup_corpora.py --only {task['repo']}\n"
+              f"or point at an existing checkout:\n"
+              f"    python benchmarks/compare_one.py --corpora /path/to/corpora\n"
+              f"    (or set SLICEGREP_BENCH_CORPORA)", file=sys.stderr)
         return 2
 
     print(f"\nTASK ({task['repo']}): {task['question']}\n")

@@ -130,7 +130,21 @@ data = result.to_dict()         # structured output for your own pipeline
 Hit rate tables don't tell you what the difference feels like. So here's a
 single realistic bug hunt run both ways, scored on the three things you
 actually need to fix something: the definition, a caller in another file, and
-the test. `benchmarks/compare_one.py` runs it if you want to check me.
+the test.
+
+You can run this yourself. It takes two commands, and the first one checks
+out the exact upstream revisions these numbers came from:
+
+```bash
+python benchmarks/setup_corpora.py --only click,flask,requests
+python benchmarks/compare_one.py --task echo
+```
+
+Each corpus is pinned to a full commit SHA, not just a tag, and the setup
+script verifies what it actually checked out. If a maintainer has moved a tag
+since, it says so loudly rather than quietly handing you numbers that can't
+be compared to these. `--corpora PATH` or `SLICEGREP_BENCH_CORPORA` point it
+at checkouts you already have.
 
 **"echo() mangles unicode on Windows. Where is it defined, who calls it, and
 what covers it?"** (click)
@@ -365,6 +379,17 @@ cd slicegrep
 pip install -e ".[dev,mcp]"
 pytest
 ```
+
+To reproduce any of the benchmark numbers, fetch the pinned corpora first:
+
+```bash
+python benchmarks/setup_corpora.py            # snapshots at pinned SHAs
+python benchmarks/setup_corpora.py --full     # + full history, needed by bench3
+python benchmarks/setup_corpora.py --verify   # check what you have
+```
+
+The corpora are other people's repositories, so they're cloned on demand and
+never committed here.
 
 The CHANGELOG records the experiments that failed next to the ones that
 worked. Multiplicative history priors, adaptive budget splits, RRF packing

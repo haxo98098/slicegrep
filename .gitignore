@@ -24,6 +24,11 @@ htmlcov/
 coverage.xml
 .tox/
 
+# Benchmark corpora: cloned on demand by benchmarks/setup_corpora.py,
+# never committed (they are other people's repositories)
+benchmarks/corpora/
+benchmarks/corpora-full/
+
 # Editor / OS
 .idea/
 .vscode/
