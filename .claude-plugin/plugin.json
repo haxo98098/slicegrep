@@ -1,14 +1,14 @@
 {
   "name": "slicegrep",
   "displayName": "slicegrep",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "Replaces whole-file reads with ranked, token-budgeted code slices",
   "author": {
     "name": "haxo98098",
     "url": "https://github.com/haxo98098"
   },
-  "homepage": "https://github.com/haxo98098/slicegerp",
-  "repository": "https://github.com/haxo98098/slicegerp",
+  "homepage": "https://github.com/haxo98098/slicegrep",
+  "repository": "https://github.com/haxo98098/slicegrep",
   "license": "MIT",
   "keywords": ["context", "retrieval", "tokens", "code-search", "hooks"],
   "hooks": "./hooks/hooks.json"

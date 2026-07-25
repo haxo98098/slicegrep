@@ -3,7 +3,7 @@
   "name": "io.github.haxo98098/slicegrep",
   "description": "grep that returns ranked, token-budgeted code slices — focused_read tool for LLM coding agents",
   "repository": {
-    "url": "https://github.com/haxo98098/slicegerp",
+    "url": "https://github.com/haxo98098/slicegrep",
     "source": "github"
   },
   "version": "0.2.0",

@@ -176,7 +176,7 @@ def build_short():
     line(("  slicegrep", WHITE, True), pause=0.6)
     line(("  ranked slices, not whole files", FG), pause=0.8)
     blank()
-    line(("  pip install git+https://github.com/haxo98098/slicegerp", CYAN),
+    line(("  pip install git+https://github.com/haxo98098/slicegrep", CYAN),
          pause=4.5)
     save("demo-short.gif")
 
@@ -308,7 +308,7 @@ line(("  ranked slices, not whole files", FG), pause=0.7)
 line(("  tells you what it could not find", FG), pause=0.7)
 line(("  fits whatever token budget you set", FG), pause=1.0)
 blank()
-line(("  pip install git+https://github.com/haxo98098/slicegerp", CYAN),
+line(("  pip install git+https://github.com/haxo98098/slicegrep", CYAN),
      pause=6.0)
 
 save("demo.gif")

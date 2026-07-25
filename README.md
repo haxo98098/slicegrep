@@ -25,7 +25,7 @@ slices, ranks them, collapses near-duplicates, trims the result to a token
 budget, and tells you what it could not find.
 
 ```bash
-pip install git+https://github.com/haxo98098/slicegerp
+pip install git+https://github.com/haxo98098/slicegrep
 ```
 
 Standard library only for the core. Python 3.8 and up.
@@ -39,7 +39,7 @@ read is big enough to be worth it, the whole file gets swapped for a map of
 the file plus the slices that match whatever the session is working on.
 
 ```
-/plugin marketplace add haxo98098/slicegerp
+/plugin marketplace add haxo98098/slicegrep
 /plugin install slicegrep@slicegrep
 ```
 
@@ -282,7 +282,7 @@ or change the query.
 If you would rather the model call it as a tool:
 
 ```bash
-pip install "slicegrep[mcp] @ git+https://github.com/haxo98098/slicegerp"
+pip install "slicegrep[mcp] @ git+https://github.com/haxo98098/slicegrep"
 claude mcp add slicegrep -- slicegrep-mcp
 ```
 
@@ -350,7 +350,7 @@ CI can branch on it.
 ## Development
 
 ```bash
-git clone https://github.com/haxo98098/slicegerp
+git clone https://github.com/haxo98098/slicegrep
 cd slicegrep
 pip install -e ".[dev,mcp]"
 pytest

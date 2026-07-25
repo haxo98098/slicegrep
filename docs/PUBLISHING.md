@@ -8,7 +8,7 @@ GitHub release — is automated.
 
 The project is fully installable without PyPI:
 
-    pip install git+https://github.com/haxo98098/slicegerp
+    pip install git+https://github.com/haxo98098/slicegrep
 
 Releases attach the wheel/sdist automatically. The PyPI steps below are
 OPTIONAL — they add `pip install slicegrep` and public download stats, and
@@ -22,7 +22,7 @@ can be done any time later.
    pending publisher" with:
    - PyPI project name: `slicegrep`
    - Owner: `haxo98098`
-   - Repository: `slicegerp`
+   - Repository: `slicegrep`
    - Workflow name: `release.yml`
    - Environment name: `pypi`
 3. In the GitHub repo: Settings → Environments → New environment → name it

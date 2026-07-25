@@ -9,11 +9,11 @@
       "name": "slicegrep",
       "source": "./",
       "description": "Replaces whole-file reads with ranked, token-budgeted code slices. Cuts a large file read by 80-90% without the agent having to ask.",
-      "version": "0.5.0",
+      "version": "0.6.1",
       "author": {
         "name": "haxo98098"
       },
-      "homepage": "https://github.com/haxo98098/slicegerp",
+      "homepage": "https://github.com/haxo98098/slicegrep",
       "license": "MIT",
       "keywords": ["context", "retrieval", "tokens", "code-search", "hooks"]
     }
