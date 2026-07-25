@@ -1,52 +1,26 @@
 # Publishing checklist
 
-Steps that require the project owner's accounts (cannot be automated from a
-collaborator machine). Everything else — building, validating, tagging,
-GitHub release — is automated.
+Steps that need the project owner's accounts. Everything else (building,
+validating, tagging, GitHub release) is automated.
 
-## 0. Current state: GitHub is the install path (no PyPI needed)
+## Install path: GitHub, deliberately
 
-The project is fully installable without PyPI:
+There is no PyPI package and none is planned. The project installs fine
+without one:
 
     pip install git+https://github.com/haxo98098/slicegrep
 
-Releases attach the wheel/sdist automatically. The PyPI steps below are
-OPTIONAL — they add `pip install slicegrep` and public download stats, and
-can be done any time later.
+and the Claude Code plugin needs no pip at all:
 
-## 1. PyPI (optional, one-time setup, ~5 minutes)
+    /plugin marketplace add haxo98098/slicegrep
+    /plugin install slicegrep@slicegrep
 
-1. Create/log into your account at https://pypi.org
-2. Since the `slicegrep` project doesn't exist yet, use a **pending
-   publisher**: https://pypi.org/manage/account/publishing/ → "Add a new
-   pending publisher" with:
-   - PyPI project name: `slicegrep`
-   - Owner: `haxo98098`
-   - Repository: `slicegrep`
-   - Workflow name: `release.yml`
-   - Environment name: `pypi`
-3. In the GitHub repo: Settings → Environments → New environment → name it
-   `pypi` (no other config needed).
-4. Push any `v*` tag (the v0.2.0 tag already exists — re-releasing means
-   bumping the version and tagging again). The release workflow builds,
-   validates, and publishes without any token.
+Releases attach the wheel and sdist automatically, so anyone who wants a
+built artifact can take one from the Releases page.
 
-After the first publish, `pip install slicegrep` works and monthly download
-stats start counting (a Claude-for-OSS eligibility metric).
+## 1. Community MCP directories (free listings, form submissions)
 
-## 2. MCP registry (official)
-
-The official registry (https://registry.modelcontextprotocol.io) requires
-the repo owner to authenticate AND a package on a supported registry (PyPI),
-so it stays parked until step 1 is done. The community directories in step 3
-work with GitHub alone — do those first.
-
-1. Install the publisher CLI: see
-   https://github.com/modelcontextprotocol/registry/blob/main/docs/guides/publishing/publish-server.md
-2. `mcp-publisher login github` (as haxo98098 — namespace `io.github.haxo98098`)
-3. From the repo root (contains `server.json`): `mcp-publisher publish`
-
-## 3. Community MCP directories (free listings, form submissions)
+These index GitHub directly and need no package registry:
 
 - https://mcpservers.org — "Submit" form
 - https://mcp.so — "Submit" form
@@ -54,9 +28,30 @@ work with GitHub alone — do those first.
 - awesome-mcp-servers lists (e.g. github.com/punkpeye/awesome-mcp-servers)
   accept PRs adding one line
 
+## 2. Claude Code plugin marketplace
+
+The repo is its own marketplace (`.claude-plugin/marketplace.json`), so the
+install commands above work for anyone the moment the repo is public. Nothing
+to submit; listing sites that aggregate plugin marketplaces can be pointed at
+the repo URL.
+
+## 3. Repo presentation (owner only)
+
+- About description and topics: `llm`, `agents`, `context-engineering`,
+  `code-search`, `mcp`, `claude`, `tokens`, `python`
+- Confirm the demo GIF renders on the repo landing page
+
 ## 4. Claude for Open Source application
 
 https://claude.com/contact-sales/claude-for-oss — apply under the exception
-clause ("apply anyway and tell us about it") citing: benchmark-driven
-development (three published result sets, a found-and-fixed ranking bug),
-MCP server for the agent ecosystem, and PyPI download trajectory.
+clause ("apply anyway and tell us about it"), citing held-out benchmark
+protocol with confirmation runs on virgin data, a documented ledger of
+rejected variants, the omission accounting that lets a caller verify what was
+withheld, and the MCP server plus plugin for the agent ecosystem.
+
+## Note on the official MCP registry
+
+https://registry.modelcontextprotocol.io requires a package on a supported
+registry (PyPI or npm). Since this project ships via GitHub only, that
+registry is out of scope. The community directories in step 1 work with a
+GitHub URL alone.

@@ -6,17 +6,7 @@
     "url": "https://github.com/haxo98098/slicegrep",
     "source": "github"
   },
-  "version": "0.2.0",
-  "packages": [
-    {
-      "registry_type": "pypi",
-      "identifier": "slicegrep",
-      "version": "0.2.0",
-      "transport": { "type": "stdio" },
-      "runtime_hint": "uvx",
-      "runtime_arguments": [
-        { "type": "positional", "value": "slicegrep-mcp" }
-      ]
-    }
-  ]
+  "version": "0.6.1",
+  "remotes": [],
+  "packages": []
 }

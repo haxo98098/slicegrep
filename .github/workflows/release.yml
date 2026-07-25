@@ -19,8 +19,9 @@ jobs:
       - run: python -m build
       - run: python -m twine check dist/*
       # Attach the built artifacts to the GitHub release for this tag.
-      # (PyPI publishing is optional; see docs/PUBLISHING.md to enable it
-      # later via trusted publishing.)
+      # GitHub is the install path for this project (see docs/PUBLISHING.md);
+      # the wheel and sdist are attached here rather than pushed to a
+      # package registry.
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
