@@ -2,6 +2,8 @@
 
 grep that gives back ranked, token-budgeted code slices instead of whole files.
 
+![slicegrep demo](docs/demo.gif)
+
 ## The problem I kept hitting
 
 Watch a coding agent work and you see the same loop over and over. It greps,
