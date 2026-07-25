@@ -150,6 +150,19 @@ def build_short():
          pause=3.0)
 
     clear(0.3)
+    caption("# one real bug task, both ways (click: where is echo?)", 1.6)
+    line(("                            calls   tokens  defn caller test", DIM),
+         pause=0.6)
+    line(("  grep>read>read>grep         ", FG), ("4", RED, True),
+         ("   14,233", RED), ("   yes   yes   ", FG), ("no", RED, True),
+         pause=1.8)
+    line(("  slicegrep                   ", FG), ("1", GREEN, True),
+         ("    2,614", GREEN), ("   yes   yes  ", FG), ("yes", GREEN, True),
+         pause=1.6)
+    blank()
+    line(("  82% fewer tokens, and it found the test", WHITE, True), pause=3.0)
+
+    clear(0.3)
     caption("# or let the hook do it, with no agent cooperation", 1.5)
     line(("agent:", DIM), ("  Read(src/slicegrep/core.py)", WHITE), pause=1.2)
     line(("hook: ", CYAN, True), (" intercepted, map + slices returned", FG),
@@ -227,6 +240,24 @@ line(("=== 5 chunk(s), ", CYAN), ("~638 tokens", GREEN, True),
      (" / 700 budget, 5 matched ===", CYAN), pause=1.2)
 line(("  2. core.py:628 ", FG),
      ("- semantic-recall, region-history", YELLOW), pause=3.2)
+
+# ========================================================= task: head to head
+clear(0.4)
+caption("# one real bug task, both ways", 1.6)
+caption("# click: where is echo defined, who calls it, what tests it?", 2.0)
+blank()
+line(("                              calls    tokens   defn  caller  test",
+      DIM), pause=0.8)
+line(("  grep > read > read > grep       ", FG), ("4", RED, True),
+     ("    14,233", RED), ("    yes     yes    ", FG), ("no", RED, True),
+     pause=2.2)
+line(("  slicegrep                       ", FG), ("1", GREEN, True),
+     ("     2,614", GREEN), ("    yes     yes   ", FG), ("yes", GREEN, True),
+     pause=2.0)
+blank()
+line(("  82% fewer tokens, 4 calls -> 1", WHITE, True), pause=1.2)
+line(("  and the budget reserves a slot for the test, so it found one", DIM),
+     pause=3.6)
 
 # ============================================================ task: omitted
 clear(0.4)

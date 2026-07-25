@@ -86,5 +86,5 @@ def test_hook_times_out_instead_of_blocking(tmp_path, monkeypatch):
     t0 = time.time()
     out = hook._slices(f, ["something"])
     elapsed = time.time() - t0
-    assert out == ""
+    assert out == {}
     assert elapsed < 3.0, f"hook waited {elapsed:.1f}s on a hung retrieval"

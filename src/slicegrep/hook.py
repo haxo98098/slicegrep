@@ -49,6 +49,13 @@ BUDGET = int(os.environ.get("SLICEGREP_HOOK_BUDGET", "1200"))
 # slow hook is indistinguishable from a frozen agent. Past this, give up and
 # let the plain read happen.
 TIMEOUT = float(os.environ.get("SLICEGREP_HOOK_TIMEOUT", "5.0"))
+# When the first pass returns only a sliver of what matched, a fixed budget is
+# the wrong answer: the file is simply denser than the default assumed. Rather
+# than hand back 6% and hope, escalate the budget until coverage is adequate
+# or the ceiling is hit. The ceiling matters, because a hook that quietly
+# grows without bound is just a whole-file read with extra steps.
+MIN_COVERAGE = float(os.environ.get("SLICEGREP_HOOK_MIN_COVERAGE", "0.55"))
+MAX_BUDGET = int(os.environ.get("SLICEGREP_HOOK_MAX_BUDGET", "4000"))
 # Past this the file is too big to be worth slicing in-band: reading it to
 # slice it costs what we are trying to save.
 MAX_BYTES = int(os.environ.get("SLICEGREP_HOOK_MAX_BYTES", str(5_000_000)))
@@ -200,16 +207,18 @@ def _file_map(text: str, max_lines: int = 60) -> str:
     return "\n".join(out)
 
 
-def _slices(path: Path, terms: list) -> str:
-    """Run retrieval under a hard deadline; empty string on miss or timeout.
+def _slices(path: Path, terms: list) -> dict:
+    """Retrieve under a hard deadline, escalating the budget if coverage is low.
+
+    Returns {"text", "budget", "coverage", "omitted", "escalated"} or {}.
 
     The worker is a daemon thread because Python cannot kill a thread stuck
     in a C-level regex. The process exits immediately after we return, so an
-    abandoned worker dies with it — what matters is that the READ is never
+    abandoned worker dies with it. What matters is that the READ is never
     held hostage to retrieval finishing.
     """
     if not terms:
-        return ""
+        return {}
     # Never let the hook trigger a dense-model load: it can hit the network
     # on a cold cache and costs seconds even warm. The hook is latency
     # critical; the CLI and MCP paths can still use dense.
@@ -220,17 +229,33 @@ def _slices(path: Path, terms: list) -> str:
         try:
             from .core import focused_read
             pattern = "|".join(re.escape(t) for t in terms)
-            result = focused_read(str(path), pattern, budget=BUDGET,
-                                  boundary="fn", objective="auto")
-            if result.chunks:
-                out["text"] = result.render()
+            budget = BUDGET
+            result = None
+            escalated = 0
+            while True:
+                result = focused_read(str(path), pattern, budget=budget,
+                                      boundary="fn", objective="auto")
+                # Coverage is the share of MATCHED material returned. Low
+                # coverage means the query hit far more than the budget can
+                # carry, which is exactly when a bigger budget pays for
+                # itself rather than sending the model back for a full read.
+                if (result.coverage >= MIN_COVERAGE
+                        or budget >= MAX_BUDGET
+                        or not result.omitted):
+                    break
+                budget = min(MAX_BUDGET, budget * 2)
+                escalated += 1
+            if result is not None and result.chunks:
+                out.update(text=result.render(), budget=budget,
+                           coverage=result.coverage,
+                           omitted=result.omitted, escalated=escalated)
         except Exception:
             pass
 
     th = threading.Thread(target=work, daemon=True)
     th.start()
     th.join(TIMEOUT)
-    return out.get("text", "")
+    return dict(out)
 
 
 def _passthrough() -> int:
@@ -298,21 +323,39 @@ def main(argv=None) -> int:
 
     slices = _slices(p, terms)
 
-    if not slices and not file_map:
+    if not slices.get("text") and not file_map:
         return _passthrough()               # rule 1: nothing useful, fail open
 
     n_lines = text.count("\n") + 1
-    parts = [
-        f"slicegrep replaced a whole-file read of {p.name} "
-        f"({n_lines:,} lines, ~{est:,} tokens) with a map and ranked slices "
-        f"(~{BUDGET} token budget).",
-        "",
-    ]
+    used_budget = slices.get("budget", BUDGET)
+    head = (f"slicegrep replaced a whole-file read of {p.name} "
+            f"({n_lines:,} lines, ~{est:,} tokens) with a map and ranked "
+            f"slices (~{used_budget} token budget")
+    if slices.get("escalated"):
+        head += f", raised {slices['escalated']}x because coverage was low"
+    head += ")."
+    parts = [head, ""]
     if file_map:
         parts += [f"FILE MAP — {path}", file_map, ""]
-    if slices:
+    if slices.get("text"):
         parts += [f"SLICES matching this session's focus ({', '.join(terms[:5])}):",
-                  slices, ""]
+                  slices["text"], ""]
+
+    # Name what is still missing and how to get it, so the next step is a
+    # precise ranged read rather than a full re-read of the file.
+    omitted = slices.get("omitted") or []
+    if omitted:
+        cov = slices.get("coverage", 1.0)
+        parts.append(f"STILL NOT SHOWN ({cov:.0%} of matched material above). "
+                     f"To see any of these, Read {p.name} with offset/limit:")
+        for o in omitted[:6]:
+            span = o["line_end"] - o["line_start"] + 1
+            parts.append(f"  offset={o['line_start']} limit={span}"
+                         f"   (~{o['tokens']} tok, score={o['score']})")
+        if len(omitted) > 6:
+            parts.append(f"  ... and {len(omitted) - 6} more region(s)")
+        parts.append("")
+
     parts.append(
         "If this is not enough: read the file again and the full contents "
         "will be returned (the next read of this path is not intercepted), "

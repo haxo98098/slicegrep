@@ -59,10 +59,29 @@ I run this on my own machine, so it is built to be safe to leave switched on:
    about 600 tokens, where slicing saves nothing worth having. The money is
    in the tail.
 
+It also adjusts itself. A fixed budget is a guess about how dense the file
+is, and when the guess is wrong the first pass returns a sliver. So the hook
+checks its own coverage: if it returned less than 55% of what matched, it
+raises the budget and retries, up to a ceiling. A hook that grew without
+bound would just be a whole-file read with extra steps, so the ceiling is the
+point.
+
+Whatever is still missing gets named with the exact arguments to fetch it:
+
+```
+STILL NOT SHOWN (38% of matched material above).
+To see any of these, Read core.py with offset/limit:
+  offset=394  limit=104   (~1028 tok, score=32)
+  offset=524  limit=219   (~2185 tok, score=31)
+```
+
+So the next step is a precise ranged read, not a full re-read of the file.
+
 Tune it with `SLICEGREP_HOOK_MIN_TOKENS` (default 2000),
-`SLICEGREP_HOOK_BUDGET` (1200), `SLICEGREP_HOOK_TIMEOUT` (5s), or turn it off
-with `SLICEGREP_HOOK_DISABLE=1`. If your Python is not on PATH as `python`,
-edit the command in `hooks/hooks.json`.
+`SLICEGREP_HOOK_BUDGET` (1200), `SLICEGREP_HOOK_MIN_COVERAGE` (0.55),
+`SLICEGREP_HOOK_MAX_BUDGET` (4000), `SLICEGREP_HOOK_TIMEOUT` (5s), or turn it
+off with `SLICEGREP_HOOK_DISABLE=1`. If your Python is not on PATH as
+`python`, edit the command in `hooks/hooks.json`.
 
 ## Using it directly
 
@@ -101,6 +120,43 @@ for chunk in result.chunks:
 
 data = result.to_dict()         # structured output for your own pipeline
 ```
+
+## One task, both ways
+
+Aggregate hit rates hide what the difference feels like. Here is a single
+realistic bug investigation run both ways, scored on the three things you
+actually need to fix a bug: the definition, a caller in another file, and the
+test. `benchmarks/compare_one.py` runs this, so you can check it.
+
+**"echo() mangles unicode on Windows. Where is it defined, who calls it, and
+what covers it?"** (click)
+
+| | tool calls | tokens | definition | caller | test |
+|---|---|---|---|---|---|
+| grep → read → read → grep | 4 | 14,233 | yes | yes | **no** |
+| slicegrep | **1** | **2,614** | yes | yes | **yes** |
+
+Same question against two other repos:
+
+| task | baseline | slicegrep | saved |
+|---|---|---|---|
+| `url_for` (flask) | 4 calls, 22,815 tok, all three | 1 call, 2,763 tok, all three | 88% |
+| `Session.request` (requests) | 4 calls, 8,826 tok, **no test** | 1 call, 2,710 tok, all three | 69% |
+
+Two things worth noticing, including the one that is not flattering:
+
+- **The baseline usually finds the definition and a caller, and misses the
+  test.** That is not bad luck. Reading the two most promising files gets you
+  the implementation; nothing in that loop goes looking for coverage. The
+  budget packer reserves a slot for a test chunk, which is why it lands one
+  in a single call.
+- **The token gap is mostly about whole files.** The baseline pays full price
+  for two files to use a few regions of each. That is the entire thesis, and
+  it is why the win shrinks on small files and grows on big ones.
+
+The honest caveat: slicegrep is showing 4% to 36% of matched material in
+these runs, and says so. It gets the three things that matter because of the
+objective guarantees, not because it saw everything.
 
 ## Does it actually work
 

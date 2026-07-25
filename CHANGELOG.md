@@ -1,3 +1,31 @@
+## [0.6.1] - 2026-07-24
+
+### Added
+
+- **Adaptive budget in the hook.** A fixed budget is a guess about how dense
+  a file is. The hook now reads its own `coverage` and, when it returned less
+  than `SLICEGREP_HOOK_MIN_COVERAGE` (0.55) of what matched, doubles the
+  budget and retries up to `SLICEGREP_HOOK_MAX_BUDGET` (4000). The ceiling is
+  the point: unbounded growth would just be a whole-file read with extra
+  steps. The whole loop still runs inside the existing 5s deadline.
+- **Omitted ranges are named with fetch arguments.** The injected context now
+  ends with a STILL NOT SHOWN block listing `offset=` / `limit=` for each
+  withheld region, so the follow-up is a precise ranged read instead of a
+  full re-read.
+- `benchmarks/compare_one.py`: one real bug task run both ways
+  (grep/read/read/grep vs a single slicegrep call), scored on tool calls,
+  tokens, and whether the definition, a cross-file caller, and the test were
+  retrieved. Measured: click 4 calls/14,233 tok (no test) vs 1 call/2,614 tok
+  (test found); flask 88% fewer tokens; requests 69% fewer.
+
+### Fixed
+
+- `compare_one.py` split grep hits on the first colon, which on Windows turned
+  `C:\\repo\\mod.py:12:code` into the path `C`. Both baseline file reads failed
+  silently, charging the baseline for grep output alone and understating its
+  true cost. Drive-letter-aware parsing, plus a warning when the baseline
+  opens fewer files than expected.
+
 ## [0.6.0] - 2026-07-24
 
 ### Added — omission accounting
