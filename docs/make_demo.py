@@ -133,8 +133,21 @@ def build_short():
     blank()
     line(("=== slicegrep: ", CYAN), ("~350 tokens", GREEN, True),
          (" / 600 budget ===", CYAN), pause=1.0)
-    line(("[DEDUPED: 4 near-duplicate chunk(s) removed]", YELLOW), pause=0.8)
-    line(("NEGATIVE EVIDENCE: 'class Scorer' not found", DIM), pause=2.8)
+    line(("[DEDUPED: 4 near-duplicate chunk(s) removed]", YELLOW), pause=1.4)
+
+    clear(0.3)
+    caption("# but what got cut? it has to tell you.", 1.5)
+    line(("OMITTED — 4 region(s), ~5,638 tokens not returned", CYAN, True),
+         pause=0.6)
+    line(("  (6% of matched material shown)", DIM), pause=1.0)
+    line(("  core.py:394-497   ~1028 tok  score=32  (definition)", FG),
+         pause=0.5)
+    line(("  core.py:524-742   ~2185 tok  score=31  (definition)", FG),
+         pause=0.5)
+    line(("  core.py:1558-1784 ~2057 tok  score=16  (rare_terms)", FG),
+         pause=1.0)
+    line(("  -> raise --budget, or read those ranges directly.", GREEN),
+         pause=3.0)
 
     clear(0.3)
     caption("# or let the hook do it, with no agent cooperation", 1.5)
@@ -214,6 +227,23 @@ line(("=== 5 chunk(s), ", CYAN), ("~638 tokens", GREEN, True),
      (" / 700 budget, 5 matched ===", CYAN), pause=1.2)
 line(("  2. core.py:628 ", FG),
      ("- semantic-recall, region-history", YELLOW), pause=3.2)
+
+# ============================================================ task: omitted
+clear(0.4)
+caption("# nothing disappears quietly: what got cut, and where it is", 1.8)
+line(("OMITTED — 12 matching region(s), ~8,610 tokens not returned", CYAN, True),
+     pause=0.6)
+line(("  (6% of matched material shown)", DIM), pause=1.2)
+line(("  core.py:102-192  ~925 tok  score=47  (multi_match, co_occurrence)", FG),
+     pause=0.6)
+line(("  cli.py:1-60      ~642 tok  score=41  (multi_match, all_patterns)", FG),
+     pause=0.6)
+line(("  hook.py:219-235  ~127 tok  score=13  (semantic-recall)", FG),
+     pause=0.6)
+line(("  ... and 9 more", DIM), pause=1.0)
+line(("  -> raise --budget, or read those ranges directly.", GREEN), pause=1.4)
+blank()
+caption("# so you can check its work instead of trusting it", 3.4)
 
 # ================================================================= task four
 clear(0.4)

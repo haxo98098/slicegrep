@@ -1,3 +1,27 @@
+## [0.6.0] - 2026-07-24
+
+### Added — omission accounting
+
+Budgeted retrieval asks you to accept less than everything, which only works
+if you can see what was withheld. Every region that matched the query is now
+either returned or declared:
+
+- `OMITTED` section in the report listing each withheld region with file,
+  line range, token size, score and rank reasons, worst loss first.
+- `Result.coverage`, `Result.omitted`, `Result.omitted_tokens`, all exposed
+  in `--json` so a harness can raise the budget or fetch the ranges itself
+  rather than guessing.
+- Real reading of a 700-token directory query: 12 regions and ~8,610 tokens
+  withheld, 6% of matched material shown. That number was always true; it
+  just was not visible before.
+
+### Fixed
+
+- **A truncated chunk overstated what it returned.** When one region exceeded
+  the entire budget it was cut to fit, but the header kept claiming the full
+  line range, so the report credited itself with lines it never showed. The
+  header now reports only the lines actually returned and the remainder is
+  listed as an omission. Found while writing the test for the section above.
 ## [0.5.1] - 2026-07-24
 
 ### Fixed — hangs
@@ -50,7 +74,7 @@ All notable changes to this project are documented here. The format follows
   regression over query-shape features, trained on 519 burned benchmark
   outcomes (92.3% train accuracy; `benchmarks/train_router.py` retrains on
   any corpus). Dev: matches the hand rule (v2 68.7 = 68.7; v3 27.0 vs
-  28.0) â€” the hand rule remains default.
+  28.0) — the hand rule remains default.
 
 ## [0.5.0] - 2026-07-20
 
@@ -161,11 +185,11 @@ All notable changes to this project are documented here. The format follows
 
 - Benchmark v2 (`benchmarks/bench2.py`): six task families (symbol,
   docstring-concept comprehension, cross-file call-chain, bug localization,
-  config/data-flow, test+impl) Ã— seven strategies (raw rg, whole-file,
+  config/data-flow, test+impl) × seven strategies (raw rg, whole-file,
   rg+windows, rg+file-ranking, jedi/LSP symbol search, TF-IDF vector
   retriever, slicegrep). 240 seeded tasks; multi-span ground truth. slicegrep
   leads overall (60.8% hit rate at 1,995 median tokens, 1 call) but
-  rg+windows wins multi-span families and TF-IDF wins concept queries â€”
+  rg+windows wins multi-span families and TF-IDF wins concept queries —
   documented as the v0.2 roadmap. `bench` extra installs jedi.
 - Scaled benchmark mode (`--scale N`): generates up to N seeded, reproducible
   lookup tasks across four pinned corpora (click, flask, requests, rich) and
@@ -178,7 +202,7 @@ All notable changes to this project are documented here. The format follows
   actual definition out of the token budget. Definition lines are now detected
   directly (pattern match on a `def`/`class`/`fn`/... line, +25), and the best
   definition chunk is guaranteed a slot when packing the budget.
-  300-task success rate: 71.7% â†’ 84.7%.
+  300-task success rate: 71.7% → 84.7%.
 
 ### Measured (benchmark v2, 240 tasks)
 - Overall ground-truth hit rate 60.8% -> 63.9% (best baseline: 57.3%).
@@ -191,7 +215,7 @@ All notable changes to this project are documented here. The format follows
 ## [0.1.0] - 2026-07-19
 
 ### Added
-- `focused_read()` core engine: grep â†’ slice â†’ rank â†’ dedupe â†’ token-budget â†’
+- `focused_read()` core engine: grep → slice → rank → dedupe → token-budget →
   negative evidence, standard-library only.
 - Ranking signals: co-occurrence, all-patterns, rare terms, definition-vs-usage,
   with test/vendor/comment demotion.
@@ -203,4 +227,5 @@ All notable changes to this project are documented here. The format follows
 - CLI: `slicegrep` and `fr`, with `--budget`, `--boundary`, `--recursive`,
   `--no-dedupe`, and `--json`.
 - MCP server (`slicegrep-mcp`) exposing `focused_read` to any MCP client.
+
 

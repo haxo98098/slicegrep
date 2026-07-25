@@ -171,6 +171,41 @@ tests), vendored or generated paths, and slices that are mostly comments.
 The optional extras (model2vec for dense, git history priors) degrade quietly
 when they are not available, which is what keeps the core dependency free.
 
+### How do you know it did not cut something you needed
+
+This is the obvious objection to any tool that hands back 350 tokens where
+there were 18,000, and "trust the ranking" is not an answer. So nothing is
+allowed to disappear quietly. Every region that matched your query is either
+returned, or named in the report with its location, size, score and the
+reason it lost:
+
+```
+OMITTED — 12 matching region(s), ~8610 tokens not returned (6% of matched material shown):
+  core.py:102-192  ~925 tok  score=47.0  (multi_match(3), co_occurrence, all_patterns)
+  cli.py:1-60      ~642 tok  score=41.0  (multi_match(3), co_occurrence)
+  hook.py:219-235  ~127 tok  score=13    (semantic-recall)
+  ... and 4 more
+  -> raise --budget, or read these ranges directly.
+```
+
+Three things follow from that:
+
+- **Coverage is stated, not implied.** "6% of matched material shown" is the
+  honest reading of a 700-token budget against this query. If that number is
+  too low for what you are doing, raise the budget. The tool will not pretend
+  the other 94% did not exist.
+- **You can always go get it.** Omissions carry exact line ranges, so the
+  next step is a normal read of those lines, not a fishing trip.
+- **Truncation counts as loss too.** When a single region is bigger than the
+  whole budget it gets cut to fit, and in that case the header used to claim
+  the full line range while showing part of it. It now reports the range it
+  actually returned and lists the remainder as omitted. That was a real bug,
+  found by writing the test for this section.
+
+`result.coverage`, `result.omitted` and `result.omitted_tokens` are on the
+Python object and in `--json`, so a harness can act on them: raise the budget
+and retry, or fetch the omitted ranges, instead of guessing.
+
 ### An empty result is a real answer
 
 Most search tools return nothing and leave you guessing whether the thing does

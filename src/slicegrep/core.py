@@ -635,10 +635,24 @@ class Result:
     files_matched: int = 0
     budget: int = 0
     deduped: int = 0
+    # Regions that matched the query but were NOT returned, so a caller can
+    # see what the budget cost them instead of having to trust the ranking
+    # blindly. Each entry: file, line_start, line_end, tokens, score, why.
+    omitted: List[dict] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
         return sum(c.tokens for c in self.chunks)
+
+    @property
+    def omitted_tokens(self) -> int:
+        return sum(o.get("tokens", 0) for o in self.omitted)
+
+    @property
+    def coverage(self) -> float:
+        """Share of matched material actually returned, 0.0-1.0."""
+        total = self.total_tokens + self.omitted_tokens
+        return (self.total_tokens / total) if total else 1.0
 
     def to_dict(self) -> dict:
         return {
@@ -650,6 +664,9 @@ class Result:
             "files_matched": self.files_matched,
             "budget": self.budget,
             "deduped": self.deduped,
+            "omitted": self.omitted,
+            "omitted_tokens": self.omitted_tokens,
+            "coverage": round(self.coverage, 3),
         }
 
     def to_json(self, indent: Optional[int] = None) -> str:
@@ -683,6 +700,24 @@ class Result:
 
         if self.deduped:
             parts.append(f"\n[DEDUPED: {self.deduped} near-duplicate chunk(s) removed]")
+
+        # What the budget cut. Reporting this is the difference between "trust
+        # my ranking" and "here is exactly what I left behind and where it is",
+        # and it costs one line per omission instead of the whole region.
+        if self.omitted:
+            parts.append(
+                f"\nOMITTED — {len(self.omitted)} matching region(s), "
+                f"~{self.omitted_tokens} tokens not returned "
+                f"({self.coverage:.0%} of matched material shown):")
+            for o in self.omitted[:8]:
+                why = ", ".join(o["reason"]) if o["reason"] else "match"
+                parts.append(
+                    f"  {Path(o['file']).name}:{o['line_start']}-"
+                    f"{o['line_end']}  ~{o['tokens']} tok  "
+                    f"score={o['score']}  ({why})")
+            if len(self.omitted) > 8:
+                parts.append(f"  ... and {len(self.omitted) - 8} more")
+            parts.append("  -> raise --budget, or read these ranges directly.")
 
         if self.negative_evidence:
             parts.append("\nNEGATIVE EVIDENCE:")
@@ -1441,6 +1476,32 @@ def _is_test_path(file: str) -> bool:
     return "test" in Path(low).name or "/tests/" in low or low.startswith("tests/")
 
 
+def _record_omissions(before: List[Chunk], after: List[Chunk],
+                      why: str) -> List[dict]:
+    """What the packer left behind, so the report can admit to it."""
+    kept = {id(c) for c in after}
+    out = []
+    for c in after:
+        # a chunk that was kept but cut short still lost material
+        trunc = getattr(c, "_truncated", None)
+        if trunc:
+            out.append(trunc)
+    for c in before:
+        if id(c) in kept:
+            continue
+        out.append({
+            "file": c.file,
+            "line_start": c.line_start,
+            "line_end": c.line_end,
+            "tokens": c.tokens,
+            "score": c.score,
+            "reason": list(c.rank_reason),
+            "why": why,
+        })
+    out.sort(key=lambda o: -o["score"])
+    return out
+
+
 def _apply_budget(chunks: List[Chunk], budget: int,
                   objective: str = "auto") -> List[Chunk]:
     if budget <= 0 or not chunks:
@@ -1523,8 +1584,26 @@ def _apply_budget(chunks: List[Chunk], budget: int,
         # possible answer — truncate the best one to fit instead.
         top = chunks[0]
         keep = max(200, budget * 4)
-        top.code = top.code[:keep] + "\n... (truncated to budget)"
+        before_tokens = top.tokens
+        kept_code = top.code[:keep]
+        # The header must not claim lines that were cut. Shrink line_end to
+        # what is actually shown and remember the rest as a loss, otherwise
+        # the report overstates its own coverage.
+        shown_lines = kept_code.count("\n") + 1
+        lost_from = top.line_start + shown_lines
+        top.code = kept_code + "\n... (truncated to budget)"
         top.tokens = estimate_tokens(top.code)
+        if lost_from <= top.line_end:
+            top._truncated = {                       # noqa: SLF001
+                "file": top.file,
+                "line_start": lost_from,
+                "line_end": top.line_end,
+                "tokens": max(0, before_tokens - top.tokens),
+                "score": top.score,
+                "reason": list(top.rank_reason),
+                "why": "truncated",
+            }
+            top.line_end = top.line_start + shown_lines - 1
         fitted = [top]
     return fitted
 
@@ -1810,6 +1889,10 @@ def focused_read(
             #   vague query (no strong lexical anchor)
             #     -> semantic list (dense+BM25-ranked blocks) gets the FULL
             #        budget; lexical only back-fills leftover space
+            # Snapshot every candidate before packing so the report can name
+            # what the budget cut. Without this the caller has to take the
+            # ranking on faith.
+            pre_pack = list(all_chunks) + list(sem)
             vague = vague_q
             if not vague:
                 all_chunks = _pack_hybrid(all_chunks, sem, budget, objective,
@@ -1834,6 +1917,7 @@ def focused_read(
                 picked.sort(key=lambda c: c.score, reverse=True)
                 all_chunks = picked
         else:
+            pre_pack = list(all_chunks)
             all_chunks = _apply_budget(all_chunks, budget, objective)
         return Result(
             query=patterns,
@@ -1842,6 +1926,7 @@ def focused_read(
             files_searched=max(searched, 1),
             files_matched=matched,
             budget=budget,
+            omitted=_record_omissions(pre_pack, all_chunks, "budget"),
         )
 
     chunks, neg, text = _extract_file(
@@ -1850,6 +1935,7 @@ def focused_read(
     pre_budget = len(chunks)
     _semantic_rerank(chunks, patterns, query_text=pattern)
     chunks.sort(key=lambda c: c.score, reverse=True)
+    pre_pack = list(chunks)
     chunks = _apply_budget(chunks, budget, objective)
 
     absences: List[str] = []
@@ -1869,4 +1955,5 @@ def focused_read(
         files_matched=1 if chunks else 0,
         budget=budget,
         deduped=max(0, pre_budget - len(chunks)) if budget else 0,
+        omitted=_record_omissions(pre_pack, chunks, "budget"),
     )
