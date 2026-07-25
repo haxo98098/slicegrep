@@ -1,0 +1,21 @@
+{
+  "name": "slicegrep",
+  "owner": {
+    "name": "haxo98098",
+    "url": "https://github.com/haxo98098"
+  },
+  "plugins": [
+    {
+      "name": "slicegrep",
+      "source": "./",
+      "description": "Replaces whole-file reads with ranked, token-budgeted code slices. Cuts a large file read by 80-90% without the agent having to ask.",
+      "version": "0.5.0",
+      "author": {
+        "name": "haxo98098"
+      },
+      "homepage": "https://github.com/haxo98098/slicegerp",
+      "license": "MIT",
+      "keywords": ["context", "retrieval", "tokens", "code-search", "hooks"]
+    }
+  ]
+}

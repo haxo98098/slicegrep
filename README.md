@@ -15,6 +15,38 @@ into one call that returns a fraction of the tokens.
 pip install git+https://github.com/haxo98098/slicegerp
 ```
 
+## Make it automatic (Claude Code plugin)
+
+Offering an agent a better retrieval tool is not enough. It has to *choose*
+the tool, and agents reach for the plain file read out of habit. The plugin
+removes the choice: a `PreToolUse` hook sits in front of `Read`, and when a
+read is large enough to be worth it, the whole file is replaced with a file
+map plus the slices matching what the session is actually working on.
+
+```
+/plugin marketplace add haxo98098/slicegerp
+/plugin install slicegrep@slicegrep
+```
+
+No pip install needed; the plugin runs the bundled source directly. Measured
+on this repo's own `core.py`: **17,849 tokens of whole file became 2,195
+tokens of map plus slices, an 88% cut on a single read.**
+
+Three rules keep it safe to leave on:
+
+1. **Fail open.** Any error, unreadable path, or empty result lets the normal
+   read happen. A retrieval optimizer must never be able to break a session.
+2. **Never trap the model.** The second read of the same path in a session
+   passes through untouched, and the injected text says so. If the slices
+   were not enough, asking again returns the whole file.
+3. **Only when it pays.** Small files, ranged reads (`offset`/`limit`), and
+   non-code files pass through. The median real-world read is ~600 tokens,
+   where slicing saves nothing. The cost lives in the tail.
+
+Tune with `SLICEGREP_HOOK_MIN_TOKENS` (default 2000), `SLICEGREP_HOOK_BUDGET`
+(1200), or `SLICEGREP_HOOK_DISABLE=1`. If `python` is not on your PATH as
+`python`, edit the command in `hooks/hooks.json`.
+
 - **Zero dependencies** for the core (standard library only). Python 3.8+ (the
   optional MCP server needs 3.10+).
 - **CLI + library + MCP server.** Use it from a shell, import it, or plug it into

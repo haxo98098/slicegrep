@@ -40,6 +40,7 @@ bench = ["jedi>=0.19"]
 slicegrep = "slicegrep.cli:main"
 fr = "slicegrep.cli:main"
 slicegrep-mcp = "slicegrep.mcp_server:main"
+slicegrep-hook = "slicegrep.hook:main"
 
 [project.urls]
 Homepage = "https://github.com/haxo98098/slicegerp"
