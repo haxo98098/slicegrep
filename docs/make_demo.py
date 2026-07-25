@@ -1,17 +1,27 @@
-"""Render a terminal-style animated GIF demo from REAL slicegrep output.
+"""Render the terminal-style demo GIF from REAL slicegrep output.
 
-Every number shown was measured, not mocked:
-  core.py = 74,406 bytes ~= 18,602 tokens whole-file
-  slicegrep --budget 600 -> ~350 tokens
+Every figure on screen was captured from an actual run, not mocked up:
+  core.py                       74,406 bytes ~= 18,602 tokens whole-file
+  budgeted single-file query    ~350 tokens
+  directory co-occurrence       ~579 tokens, 6 files searched, 3 matched
+  natural-language query        ~638 tokens, auto-expanded
+  PreToolUse hook on core.py    17,849 -> 2,195 tokens
+
+PIL drops duplicate consecutive frames, so pauses are encoded as per-frame
+durations rather than repeated frames. That keeps the file small AND is the
+only way holds survive the encoder.
 """
+import os
+
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 940, 600
+W, H = 940, 620
 PAD = 22
-LH = 21                      # line height
-FPS_MS = 70                  # ms per frame
+LH = 21
+TICK = 70                    # ms per animation frame
 
 BG = (13, 17, 23)
+BAR = (22, 27, 34)
 FG = (201, 209, 217)
 DIM = (110, 118, 129)
 GREEN = (63, 185, 80)
@@ -23,113 +33,171 @@ WHITE = (240, 246, 252)
 
 F = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 15)
 FB = ImageFont.truetype("C:/Windows/Fonts/consolab.ttf", 15)
-FT = ImageFont.truetype("C:/Windows/Fonts/consolab.ttf", 17)
 
-frames = []
-durations = []       # ms per frame; PIL drops duplicate frames, so pauses
-                     # must be encoded as duration, not repeated frames
-screen = []          # list of list[(text, color, bold)]
+frames, durations = [], []
+screen = []
 
 
 def draw():
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    # title bar
-    d.rectangle([0, 0, W, 30], fill=(22, 27, 34))
+    d.rectangle([0, 0, W, 30], fill=BAR)
     for i, c in enumerate([(255, 95, 86), (255, 189, 46), (39, 201, 63)]):
         d.ellipse([16 + i * 20, 11, 26 + i * 20, 21], fill=c)
     d.text((W // 2 - 52, 7), "slicegrep", font=F, fill=DIM)
     y = 30 + PAD // 2
-    for line in screen[-24:]:
+    for spans in screen[-26:]:
         x = PAD
-        for text, color, bold in line:
+        for text, color, bold in spans:
             f = FB if bold else F
             d.text((x, y), text, font=f, fill=color)
             x += d.textlength(text, font=f)
         y += LH
     frames.append(img)
-    durations.append(FPS_MS)
+    durations.append(TICK)
 
 
-def hold(n=1):
-    """Extend the last frame instead of emitting duplicates."""
+def hold(seconds):
+    """Extend the last frame. Pauses must be duration, not duplicate frames."""
     if not frames:
         draw()
-    durations[-1] += n * FPS_MS
+    durations[-1] += int(seconds * 1000)
 
 
-def type_cmd(cmd, prompt="$ "):
-    screen.append([(prompt, GREEN, True)])
-    step = 3
-    for i in range(0, len(cmd) + step, step):
-        screen[-1] = [(prompt, GREEN, True), (cmd[:i], WHITE, False)]
-        draw()
-    screen[-1] = [(prompt, GREEN, True), (cmd, WHITE, False)]
-    hold(6)
-
-
-def line(*spans, n=1):
-    """Each span is (text,), (text, color) or (text, color, bold)."""
+def line(*spans, pause=0.0):
     norm = []
     for s in spans:
-        text = s[0]
-        color = s[1] if len(s) > 1 else FG
-        bold = s[2] if len(s) > 2 else False
-        norm.append((text, color, bold))
+        norm.append((s[0],
+                     s[1] if len(s) > 1 else FG,
+                     s[2] if len(s) > 2 else False))
     screen.append(norm)
-    hold(n)
+    draw()
+    if pause:
+        hold(pause)
 
 
-def blank(n=1):
-    screen.append([])
-    hold(n)
+def blank(pause=0.0):
+    line(("", FG), pause=pause)
 
 
-# ---------------------------------------------------------------- scene 1
-line(("# an agent needs to know how scoring and dedup work", DIM), n=10)
-type_cmd('wc -c src/slicegrep/core.py')
+def clear(pause=0.0):
+    screen.clear()
+    draw()
+    if pause:
+        hold(pause)
+
+
+def type_cmd(cmd, pause=1.1):
+    """Typewriter, deliberately unhurried so it can be read while typing."""
+    screen.append([("$ ", GREEN, True)])
+    for i in range(0, len(cmd) + 2, 2):
+        screen[-1] = [("$ ", GREEN, True), (cmd[:i], WHITE, False)]
+        draw()
+    screen[-1] = [("$ ", GREEN, True), (cmd, WHITE, False)]
+    draw()
+    hold(pause)
+
+
+def caption(text, pause=2.2):
+    line((text, DIM), pause=pause)
+
+
+# ===================================================================== intro
+caption("# a coding agent needs to understand scoring and dedup", 1.6)
+caption("# option 1: read the whole file", 1.6)
+type_cmd("wc -c src/slicegrep/core.py")
 line(("  74406", YELLOW, True), ("  bytes", FG), ("   ->  ", DIM),
-     ("~18,602 tokens", RED, True), (" into the context window", FG))
-hold(16)
-blank()
+     ("~18,602 tokens", RED, True), (" of context burned", FG), pause=3.2)
 
-# ---------------------------------------------------------------- scene 2
+# ================================================================== task one
+clear(0.4)
+caption("# option 2: ask for just the slices that matter", 1.8)
 type_cmd('slicegrep src/slicegrep/core.py "class Scorer|def score|dedupe" --budget 600')
 blank()
 line(("=== slicegrep: 1 chunk(s), ", CYAN), ("~350 tokens", GREEN, True),
-     (" / 600 budget ===", CYAN))
+     (" / 600 budget ===", CYAN), pause=1.4)
 blank()
-line(("[core.py:1831-1872 matches=1 patterns=dedupe score=8]", MAG))
-for code in [
-    "                    if used + c.tokens <= budget:",
-    "                        picked.append(c)",
-    "                        used += c.tokens",
-    "                picked.sort(key=lambda c: c.score, reverse=True)",
-]:
+line(("[core.py:1831-1872 matches=1 patterns=dedupe score=8]", MAG), pause=0.5)
+for code in ["                    if used + c.tokens <= budget:",
+             "                        picked.append(c)",
+             "                        used += c.tokens",
+             "                picked.sort(key=lambda c: c.score, reverse=True)"]:
     line((code, FG))
+hold(1.2)
 blank()
-line(("[DEDUPED: 4 near-duplicate chunk(s) removed]", YELLOW))
+line(("[DEDUPED: 4 near-duplicate chunk(s) removed]", YELLOW), pause=3.4)
+
+# ================================================================== task two
+clear(0.4)
+caption("# rank across a whole directory, concepts that co-occur", 1.8)
+type_cmd('slicegrep src/ "retry|timeout|backoff" --budget 700')
 blank()
-line(("NEGATIVE EVIDENCE:", CYAN, True))
-line(("  - Pattern 'class Scorer' not found", DIM))
-line(("  - Pattern 'def score' IS present but fell outside the budget", DIM))
-hold(30)
+line(("=== slicegrep recursive: 3 chunk(s), ", CYAN),
+     ("~579 tokens", GREEN, True), (" / 700 budget,", CYAN),
+     (" 6 files searched, 3 matched ===", CYAN), pause=1.4)
+blank()
+line(("RANKING:", CYAN, True), pause=0.4)
+line(("  1. core.py:80 ", FG),
+     ("- multi_match(3), co_occurrence, all_patterns, rare_terms", YELLOW),
+     pause=1.0)
+line(("  2. cli.py:1 ", FG), ("- semantic-recall", YELLOW), pause=0.4)
+line(("  3. core.py:792 ", FG), ("- semantic-recall", YELLOW), pause=1.2)
+blank()
+caption("# it tells you WHY each slice ranked where it did", 3.4)
 
-# ---------------------------------------------------------------- scene 3
-blank(2)
-line(("  18,602 tokens", RED, True), ("   ->   ", DIM),
-     ("350 tokens", GREEN, True),
-     ("      98% smaller", WHITE, True), n=46)
+# ================================================================ task three
+clear(0.4)
+caption("# or just ask in plain English", 1.8)
+type_cmd('slicegrep src/ "how does budget packing guarantee definitions"')
+blank()
+line(("QUERY (auto-expanded):", CYAN, True), pause=0.5)
+line(("  budget|packing|guarantee|definitions|budget_packing|", MAG), pause=0.3)
+line(("  packing_guarantee|guarantee_definitions", MAG), pause=1.3)
+blank()
+line(("=== 5 chunk(s), ", CYAN), ("~638 tokens", GREEN, True),
+     (" / 700 budget, 5 matched ===", CYAN), pause=1.2)
+line(("  2. core.py:628 ", FG),
+     ("- semantic-recall, region-history", YELLOW), pause=3.2)
 
-# render
-draw()
+# ================================================================= task four
+clear(0.4)
+caption("# an empty result is a real answer, so it says which kind", 1.8)
+line(("NEGATIVE EVIDENCE:", CYAN, True), pause=0.6)
+line(("  - Pattern 'class Scorer' ", FG), ("not found", RED, True), pause=1.4)
+line(("  - Pattern 'def score' ", FG), ("IS present", GREEN, True),
+     (" but fell outside the budget", FG), pause=1.6)
+blank()
+caption("# raise the budget, or change the query. no guessing.", 3.4)
+
+# ================================================================= task five
+clear(0.4)
+caption("# and it can run without the agent choosing it at all", 1.8)
+type_cmd("/plugin install slicegrep@slicegrep", pause=1.4)
+blank()
+line(("agent:", DIM), ("  Read(src/slicegrep/core.py)", WHITE), pause=1.4)
+line(("hook: ", CYAN, True),
+     (" whole-file read intercepted", FG), pause=1.2)
+line(("       file map + ranked slices returned instead", FG), pause=1.6)
+blank()
+line(("  17,849 tokens", RED, True), ("  ->  ", DIM),
+     ("2,195 tokens", GREEN, True), ("   on one read", FG), pause=3.6)
+
+# =================================================================== closing
+clear(0.4)
+blank()
+line(("  slicegrep", WHITE, True), pause=0.8)
+blank()
+line(("  ranked slices, not whole files", FG), pause=0.7)
+line(("  tells you what it could not find", FG), pause=0.7)
+line(("  fits whatever token budget you set", FG), pause=1.0)
+blank()
+line(("  pip install git+https://github.com/haxo98098/slicegerp", CYAN),
+     pause=6.0)
+
 imgs = [f.convert("P", palette=Image.ADAPTIVE, colors=64) for f in frames]
-out = (r"C:\Users\Shadow\Desktop\slicegrep\docs\demo.gif")
-import os
-os.makedirs(os.path.dirname(out), exist_ok=True)
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo.gif")
 imgs[0].save(out, save_all=True, append_images=imgs[1:],
              duration=durations, loop=0, optimize=True)
 print("frames:", len(imgs))
-print("total seconds:", round(sum(durations) / 1000, 1))
+print("runtime:", round(sum(durations) / 1000, 1), "s")
 print("size KB:", round(os.path.getsize(out) / 1024))
-print(out)
